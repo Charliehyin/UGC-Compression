@@ -66,30 +66,58 @@ def display_results(results):
         
         if metric == "vmaf":
             # Handle VMAF specific output
-            vmaf_score = data.get('mean', None)
-            if vmaf_score:
-                print(f"VMAF Score: {vmaf_score:.2f} / 100.0")
+            if isinstance(data, dict):
+                vmaf_score = data.get('mean', None)
+                if vmaf_score:
+                    print(f"VMAF Score: {vmaf_score:.2f} / 100.0")
+                    
+                    # Interpretation guidelines for VMAF
+                    print("\n=== VMAF SCORE INTERPRETATION ===")
+                    print("0-20:   Bad quality")
+                    print("20-40:  Poor quality")
+                    print("40-60:  Fair quality")
+                    print("60-80:  Good quality")
+                    print("80-100: Excellent quality")
+                    
+                    quality_tier = "Bad" if vmaf_score < 20 else \
+                                   "Poor" if vmaf_score < 40 else \
+                                   "Fair" if vmaf_score < 60 else \
+                                   "Good" if vmaf_score < 80 else "Excellent"
+                    print(f"\nThis video's quality is rated as: {quality_tier}")
                 
-                # Interpretation guidelines for VMAF
-                print("\n=== VMAF SCORE INTERPRETATION ===")
-                print("0-20:   Bad quality")
-                print("20-40:  Poor quality")
-                print("40-60:  Fair quality")
-                print("60-80:  Good quality")
-                print("80-100: Excellent quality")
-                
-                quality_tier = "Bad" if vmaf_score < 20 else \
-                               "Poor" if vmaf_score < 40 else \
-                               "Fair" if vmaf_score < 60 else \
-                               "Good" if vmaf_score < 80 else "Excellent"
-                print(f"\nThis video's quality is rated as: {quality_tier}")
-            
-            # Print frame-by-frame details if available
-            if 'frames' in data and data['frames']:
-                print("\n=== Frame-by-Frame Details ===")
-                print(f"Analyzed {len(data['frames'])} frames")
-                print(f"Min VMAF: {min(frame.get('metrics', {}).get('vmaf', 0) for frame in data['frames']):.2f}")
-                print(f"Max VMAF: {max(frame.get('metrics', {}).get('vmaf', 0) for frame in data['frames']):.2f}")
+                # Print frame-by-frame details if available
+                if 'frames' in data and data['frames']:
+                    print("\n=== Frame-by-Frame Details ===")
+                    print(f"Analyzed {len(data['frames'])} frames")
+                    print(f"Min VMAF: {min(frame.get('metrics', {}).get('vmaf', 0) for frame in data['frames']):.2f}")
+                    print(f"Max VMAF: {max(frame.get('metrics', {}).get('vmaf', 0) for frame in data['frames']):.2f}")
+            elif isinstance(data, list):
+                # Handle case where VMAF data is a list
+                if data and isinstance(data[0], dict) and 'vmaf' in data[0]:
+                    vmaf_scores = [frame.get('vmaf', 0) for frame in data]
+                    mean_vmaf = sum(vmaf_scores) / len(vmaf_scores)
+                    print(f"VMAF Score: {mean_vmaf:.2f} / 100.0")
+                    
+                    print("\n=== VMAF SCORE INTERPRETATION ===")
+                    print("0-20:   Bad quality")
+                    print("20-40:  Poor quality")
+                    print("40-60:  Fair quality")
+                    print("60-80:  Good quality")
+                    print("80-100: Excellent quality")
+                    
+                    quality_tier = "Bad" if mean_vmaf < 20 else \
+                                  "Poor" if mean_vmaf < 40 else \
+                                  "Fair" if mean_vmaf < 60 else \
+                                  "Good" if mean_vmaf < 80 else "Excellent"
+                    print(f"\nThis video's quality is rated as: {quality_tier}")
+                    
+                    print("\n=== Frame-by-Frame Details ===")
+                    print(f"Analyzed {len(data)} frames")
+                    print(f"Min VMAF: {min(frame.get('vmaf', 0) for frame in data):.2f}")
+                    print(f"Max VMAF: {max(frame.get('vmaf', 0) for frame in data):.2f}")
+                else:
+                    print("VMAF data format not recognized")
+                    print(json.dumps(data, indent=2))
         
         elif metric in ["psnr", "ssim"]:
             # Handle other metrics
@@ -109,10 +137,10 @@ def main():
     # Create a mutually exclusive group for the first video source
     video1_group = parser.add_mutually_exclusive_group(required=True)
     video1_group.add_argument("--reference", help="Path to the reference (original) video")
-    video1_group.add_argument("--youtube", help="YouTube URL to download as reference video")
+    video1_group.add_argument("--youtube", help="YouTube URL to download as distorted video")
     
     # Second video is always a file path
-    parser.add_argument("--distorted", required=True, help="Path to the distorted (compressed) video")
+    parser.add_argument("--distorted", required=True, help="Path to the distorted video or reference if YouTube is used")
     
     # Optional arguments
     parser.add_argument("--youtube-output", help="Output path for the downloaded YouTube video")
@@ -123,23 +151,28 @@ def main():
     args = parser.parse_args()
     
     # Handle YouTube download if specified
-    reference_video = None
     if args.youtube:
-        reference_video = download_youtube_video(args.youtube, args.youtube_output)
+        # YouTube is the distorted video, local file is reference
+        distorted_video = download_youtube_video(args.youtube, args.youtube_output)
+        reference_video = args.distorted  # Local file becomes the reference
     else:
+        # Standard case where reference is provided directly
         reference_video = args.reference
+        distorted_video = args.distorted
     
     # Check if files exist
-    for video_path in [reference_video, args.distorted]:
+    for video_path in [reference_video, distorted_video]:
         if not os.path.exists(video_path):
             print(f"Error: Video file not found: {video_path}")
             sys.exit(1)
     
     # Run comparison
-    results = run_video_comparison(reference_video, args.distorted, args.metrics)
+    results = run_video_comparison(reference_video, distorted_video, args.metrics)
     
     # Display results
     display_results(results)
 
 if __name__ == "__main__":
     main()
+
+    # "C:\Users\Charlie Yin\Videos\2025-04-11 22-12-53.mkv"
